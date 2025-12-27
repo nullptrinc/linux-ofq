@@ -33,6 +33,7 @@
 #include "bus.h"
 #include "common.h"
 #include "fwvid.h"
+#include "brcm_hw_ids.h"
 
 #define BRCMF_SCAN_IE_LEN_MAX		2048
 
@@ -760,7 +761,7 @@ static int brcmf_cfg80211_request_ap_if(struct brcmf_if *ifp)
 				       &iface_create_ver);
 	if (err) {
 		brcmf_err("fail to get supported version, err=%d\n", err);
-		return -EOPNOTSUPP;
+		err = -EOPNOTSUPP;
 	}
 
 	switch (iface_create_ver) {
@@ -8284,6 +8285,61 @@ struct brcmf_cfg80211_info *brcmf_cfg80211_attach(struct brcmf_pub *drvr,
 	vif->wdev.netdev = ndev;
 	ndev->ieee80211_ptr = &vif->wdev;
 	SET_NETDEV_DEV(ndev, wiphy_dev(cfg->wiphy));
+
+	/* Laird - Configure regdomain if provided in settings
+	 *   Required for 4373/43439, optional for 4343/4339
+	 *   Note - Configuration provided as country code except for "ETSI" pseudocode
+	 */
+	if (strlen(drvr->settings->regdomain) != 0) {
+		struct brcmf_fil_country_le ccreq;
+
+		memset(&ccreq, 0, sizeof(ccreq));
+
+		/* Convert ETSI pseudocode to underlying ccode (radio specific) */
+		if (!strcmp("ETSI", drvr->settings->regdomain)) {
+			switch (drvr->bus_if->chip) {
+			case CY_CC_4373_CHIP_ID:
+				strcpy(ccreq.country_abbrev, "DE");
+				break;
+			case BRCM_CC_4339_CHIP_ID:
+			case BRCM_CC_43430_CHIP_ID:
+				strcpy(ccreq.country_abbrev, "EU");
+				break;
+			}
+		} else {
+			memcpy(ccreq.country_abbrev, drvr->settings->regdomain, BRCMF_COUNTRY_BUF_SZ);
+		}
+
+		/* Handle regrev for LWB5 for supported countries */
+		if (drvr->bus_if->chip == BRCM_CC_4339_CHIP_ID) {
+			/* country codes with rev (a country spec) need to also populate ccode parameter */
+			memcpy(ccreq.ccode, ccreq.country_abbrev, BRCMF_COUNTRY_BUF_SZ);
+			if (!strcmp("US", ccreq.ccode))
+				ccreq.rev = cpu_to_le32(911);
+			else if (!strcmp("CA", ccreq.ccode))
+				ccreq.rev = cpu_to_le32(938);
+			else if (!strcmp("EU", ccreq.ccode))
+				ccreq.rev = cpu_to_le32(116);
+			else if (!strcmp("JP", ccreq.ccode))
+				ccreq.rev = cpu_to_le32(101);
+			else {
+				brcmf_err("Regulatory domain %s not supported, aborting!\n", drvr->settings->regdomain);
+				goto wiphy_out;
+			}
+		} else {
+			ccreq.rev = -1;
+		}
+
+		err = brcmf_fil_iovar_data_set(ifp, "country", &ccreq, sizeof(ccreq));
+		if (err) {
+			brcmf_err("Regulatory domain %s not supported, aborting!\n", drvr->settings->regdomain);
+			goto wiphy_out;
+		}
+		brcmf_info("Using regulatory domain %s\n", drvr->settings->regdomain);
+	} else if (drvr->bus_if->chip == CY_CC_4373_CHIP_ID) {
+		brcmf_err("Regulatory domain not configured, aborting!\n");
+		goto wiphy_out;
+	}
 
 	err = wl_init_priv(cfg);
 	if (err) {

@@ -73,6 +73,10 @@
 #define YCBCR422_8BITS		3
 #define XVYCC444            4
 
+static int allow_noncea = 1;
+module_param(allow_noncea, int, 0644);
+MODULE_PARM_DESC(allow_noncea, "Allow non CEA modes");
+
 /*
  * We follow a flowchart which is in the "Synopsys DesignWare Courses
  * HDMI Transmitter Controller User Guide, 1.30a", section 3.1
@@ -1268,9 +1272,6 @@ static void mxc_hdmi_phy_init(struct mxc_hdmi *hdmi)
 			|| (hdmi->blank != FB_BLANK_UNBLANK))
 		return;
 
-	if (!hdmi->hdmi_data.video_mode.mDVI)
-		hdmi_enable_overflow_interrupts();
-
 	/*check csc whether needed activated in HDMI mode */
 	cscon = (isColorSpaceConversion(hdmi) &&
 			!hdmi->hdmi_data.video_mode.mDVI);
@@ -1285,6 +1286,9 @@ static void mxc_hdmi_phy_init(struct mxc_hdmi *hdmi)
 		/* Enable CSC */
 		hdmi_phy_configure(hdmi, 0, 8, cscon);
 	}
+
+	if (!hdmi->hdmi_data.video_mode.mDVI)
+		hdmi_enable_overflow_interrupts();
 
 	hdmi->phy_enabled = true;
 }
@@ -1811,7 +1815,7 @@ static void mxc_hdmi_edid_rebuild_modelist(struct mxc_hdmi *hdmi)
 		mode = &hdmi->fbi->monspecs.modedb[i];
 
 		if (!(mode->vmode & FB_VMODE_INTERLACED) &&
-				(mxc_edid_mode_to_vic(mode) != 0)) {
+				(allow_noncea || mxc_edid_mode_to_vic(mode))) {
 
 			dev_dbg(&hdmi->pdev->dev, "Added mode %d:", i);
 			dev_dbg(&hdmi->pdev->dev,
@@ -1956,11 +1960,8 @@ static void mxc_hdmi_cable_connected(struct mxc_hdmi *hdmi)
 	/* HDMI Initialization Steps D, E, F */
 	switch (edid_status) {
 	case HDMI_EDID_SUCCESS:
-		mxc_hdmi_edid_rebuild_modelist(hdmi);
-		break;
-
-	/* Nothing to do if EDID same */
 	case HDMI_EDID_SAME:
+		mxc_hdmi_edid_rebuild_modelist(hdmi);
 		break;
 
 	case HDMI_EDID_FAIL:

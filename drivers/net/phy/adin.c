@@ -14,6 +14,7 @@
 #include <linux/mii.h>
 #include <linux/phy.h>
 #include <linux/property.h>
+#include <linux/of.h>
 
 #define PHY_ID_ADIN1200				0x0283bc20
 #define PHY_ID_ADIN1300				0x0283bc30
@@ -68,8 +69,19 @@
 #define ADIN1300_EEE_CAP_REG			0x8000
 #define ADIN1300_EEE_ADV_REG			0x8001
 #define ADIN1300_EEE_LPABLE_REG			0x8002
+#define ADIN1300_FLD_EN_REG			0x8E27
+#define   ADIN1300_FLD_PCS_ERR_100_EN		BIT(7)
+#define   ADIN1300_FLD_PCS_ERR_1000_EN		BIT(6)
+#define   ADIN1300_FLD_SLCR_OUT_STUCK_100_EN	BIT(5)
+#define   ADIN1300_FLD_SLCR_OUT_STUCK_1000_EN	BIT(4)
+#define   ADIN1300_FLD_SLCR_IN_ZDET_100_EN	BIT(3)
+#define   ADIN1300_FLD_SLCR_IN_ZDET_1000_EN	BIT(2)
+#define   ADIN1300_FLD_SLCR_IN_INVLD_100_EN	BIT(1)
+#define   ADIN1300_FLD_SLCR_IN_INVLD_1000_EN	BIT(0)
 #define ADIN1300_CLOCK_STOP_REG			0x9400
 #define ADIN1300_LPI_WAKE_ERR_CNT_REG		0xa000
+#define ADIN1300_B_1000_RTRN_EN_REG		0xa001
+#define   ADIN1300_B_1000_RTRN_EN		BIT(0)
 
 #define ADIN1300_CDIAG_RUN			0xba1b
 #define   ADIN1300_CDIAG_RUN_EN			BIT(0)
@@ -216,6 +228,39 @@ struct adin_priv {
 	u64			stats[ARRAY_SIZE(adin_hw_stats)];
 };
 
+/**
+ * adin_get_phy_mode_override - Get phy-mode override for adin PHY
+ *
+ * The function gets phy-mode string from property 'adi,phy-mode-override'
+ * and return its index in phy_modes table, or errno in error case.
+ */
+int adin_get_phy_mode_override(struct phy_device *phydev)
+{
+	struct device *dev = &phydev->mdio.dev;
+	struct device_node *of_node = dev->of_node;
+	const char *phy_mode_override;
+	const char *prop_phy_mode_override = "adi,phy-mode-override";
+	int err, i;
+
+	err = of_property_read_string(of_node, prop_phy_mode_override,
+				      &phy_mode_override);
+	if (err < 0)
+		return err;
+
+	phydev_info(phydev,
+		    "%s = '%s'\n", prop_phy_mode_override, phy_mode_override);
+
+	for (i = 0; i < PHY_INTERFACE_MODE_MAX; i++)
+		if (!strcasecmp(phy_mode_override, phy_modes(i)))
+			return i;
+
+	phydev_err(phydev,
+		   "%s = '%s' is not valid\n",
+		   prop_phy_mode_override, phy_mode_override);
+
+	return -ENODEV;
+}
+
 static int adin_lookup_reg_value(const struct adin_cfg_reg_map *tbl, int cfg)
 {
 	size_t i;
@@ -255,6 +300,11 @@ static int adin_config_rgmii_mode(struct phy_device *phydev)
 {
 	u32 val;
 	int reg;
+	int phy_mode_override = adin_get_phy_mode_override(phydev);
+
+	if (phy_mode_override >= 0) {
+		phydev->interface = (phy_interface_t) phy_mode_override;
+	}
 
 	if (!phy_interface_is_rgmii(phydev))
 		return phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
@@ -469,6 +519,42 @@ static int adin_config_clk_out(struct phy_device *phydev)
 			      ADIN1300_GE_CLK_CFG_MASK, sel);
 }
 
+static int adin_fast_down_disable(struct phy_device *phydev)
+{
+	struct device *dev = &phydev->mdio.dev;
+	int bits = 0;
+
+	if (device_property_read_bool(dev, "adi,disable-fast-down-1000base-t"))
+		bits |= ADIN1300_FLD_PCS_ERR_1000_EN |
+				ADIN1300_FLD_SLCR_OUT_STUCK_1000_EN |
+				ADIN1300_FLD_SLCR_IN_ZDET_1000_EN |
+				ADIN1300_FLD_SLCR_IN_INVLD_1000_EN;
+
+	if (device_property_read_bool(dev, "adi,disable-fast-down-100base-tx"))
+		bits |= ADIN1300_FLD_PCS_ERR_100_EN |
+				ADIN1300_FLD_SLCR_OUT_STUCK_100_EN |
+				ADIN1300_FLD_SLCR_IN_ZDET_100_EN |
+				ADIN1300_FLD_SLCR_IN_INVLD_100_EN;
+
+	if (bits)
+		return phy_clear_bits_mmd(phydev, MDIO_MMD_VEND1,
+					 ADIN1300_FLD_EN_REG, bits);
+	else
+		return 0;
+}
+
+static int adin_enable_retrain(struct phy_device *phydev)
+{
+	struct device *dev = &phydev->mdio.dev;
+
+	if (device_property_read_bool(dev, "adi,1000base-t-retrain-en"))
+		return phy_set_bits_mmd(phydev, MDIO_MMD_VEND1,
+			      ADIN1300_B_1000_RTRN_EN_REG,
+			      ADIN1300_B_1000_RTRN_EN);
+
+	return 0;
+}
+
 static int adin_config_init(struct phy_device *phydev)
 {
 	int rc;
@@ -492,6 +578,14 @@ static int adin_config_init(struct phy_device *phydev)
 		return rc;
 
 	rc = adin_config_clk_out(phydev);
+	if (rc < 0)
+		return rc;
+
+	rc = adin_fast_down_disable(phydev);
+	if (rc < 0)
+		return rc;
+
+	rc = adin_enable_retrain(phydev);
 	if (rc < 0)
 		return rc;
 

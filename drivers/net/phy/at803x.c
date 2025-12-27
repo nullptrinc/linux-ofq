@@ -311,6 +311,7 @@ struct at803x_priv {
 	bool is_1000basex;
 	struct regulator_dev *vddio_rdev;
 	struct regulator_dev *vddh_rdev;
+	int vddio_last_selector;
 	u64 stats[ARRAY_SIZE(at803x_hw_stats)];
 };
 
@@ -437,6 +438,28 @@ static void at803x_context_restore(struct phy_device *phydev,
 	phy_write(phydev, AT803X_INTR_ENABLE, context->int_enable);
 	phy_write(phydev, AT803X_SMART_SPEED, context->smart_speed);
 	phy_write(phydev, AT803X_LED_CONTROL, context->led_control);
+}
+
+static int at803x_rgmii_vol_config_save(struct phy_device *phydev)
+{
+	struct at803x_priv *priv = phydev->priv;
+	const struct regulator_ops *vddio_ops = priv->vddio_rdev->desc->ops;
+
+	priv->vddio_last_selector = vddio_ops->get_voltage_sel(priv->vddio_rdev);
+
+	return 0;
+}
+
+static int at803x_rgmii_vol_config_restore(struct phy_device *phydev)
+{
+	struct at803x_priv *priv = phydev->priv;
+	const struct regulator_ops *vddio_ops = priv->vddio_rdev->desc->ops;
+	int ret = 0;
+
+	if (priv->vddio_last_selector >= 0)
+		ret = vddio_ops->set_voltage_sel(priv->vddio_rdev, priv->vddio_last_selector);
+
+	return ret;
 }
 
 static int at803x_set_wol(struct phy_device *phydev,
@@ -584,6 +607,8 @@ static int at803x_suspend(struct phy_device *phydev)
 	value = phy_read(phydev, AT803X_INTR_ENABLE);
 	wol_enabled = value & AT803X_INTR_ENABLE_WOL;
 
+	at803x_rgmii_vol_config_save(phydev);
+
 	if (wol_enabled)
 		value = BMCR_ISOLATE;
 	else
@@ -596,6 +621,12 @@ static int at803x_suspend(struct phy_device *phydev)
 
 static int at803x_resume(struct phy_device *phydev)
 {
+	int ret;
+
+	ret = at803x_rgmii_vol_config_restore(phydev);
+	if (ret < 0)
+		return ret;
+
 	return phy_modify(phydev, MII_BMCR, BMCR_PDOWN | BMCR_ISOLATE, 0);
 }
 
@@ -842,6 +873,8 @@ static int at803x_parse_dt(struct phy_device *phydev)
 			phydev_err(phydev, "failed to get VDDIO regulator\n");
 			return ret;
 		}
+		const struct regulator_ops *vddio_ops = priv->vddio_rdev->desc->ops;
+		priv->vddio_last_selector = vddio_ops->get_voltage_sel(priv->vddio_rdev);
 
 		/* Only AR8031/8033 support 1000Base-X for SFP modules */
 		ret = phy_sfp_probe(phydev, &at803x_sfp_ops);
@@ -863,6 +896,7 @@ static int at803x_probe(struct phy_device *phydev)
 		return -ENOMEM;
 
 	phydev->priv = priv;
+	priv->vddio_last_selector = -1;
 
 	ret = at803x_parse_dt(phydev);
 	if (ret)
@@ -1002,6 +1036,11 @@ static int at803x_hibernation_mode_config(struct phy_device *phydev)
 					 AT803X_DEBUG_HIB_CTRL_PS_HIB_EN, 0);
 }
 
+static int at803x_rgmii_vol_config(struct phy_device *phydev) {
+
+	return at803x_rgmii_vol_config_restore(phydev);
+}
+
 static int at803x_config_init(struct phy_device *phydev)
 {
 	struct at803x_priv *priv = phydev->priv;
@@ -1055,6 +1094,10 @@ static int at803x_config_init(struct phy_device *phydev)
 		return ret;
 
 	ret = at803x_hibernation_mode_config(phydev);
+	if (ret < 0)
+		return ret;
+
+	ret = at803x_rgmii_vol_config(phydev);
 	if (ret < 0)
 		return ret;
 

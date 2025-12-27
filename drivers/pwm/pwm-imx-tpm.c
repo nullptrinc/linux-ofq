@@ -20,6 +20,7 @@
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
 #include <linux/slab.h>
@@ -65,6 +66,7 @@ struct imx_tpm_pwm_chip {
 	u32 user_count;
 	u32 enable_count;
 	u32 real_period;
+	u32 clk_is_prepared;
 };
 
 struct imx_tpm_pwm_param {
@@ -297,6 +299,16 @@ static int pwm_imx_tpm_apply(struct pwm_chip *chip,
 	struct pwm_state real_state;
 	int ret;
 
+	if (!tpm->clk_is_prepared) {
+		printk("%s: prepare clock fixup\n", __func__);
+		ret = clk_prepare_enable(tpm->clk);
+		if (ret) {
+			printk("%s failed to prepare or enable clock: %d\n", __func__, ret);
+			return ret;
+		}
+		tpm->clk_is_prepared = 1;
+	}
+
 	ret = pwm_imx_tpm_round_state(chip, &param, &real_state, state);
 	if (ret)
 		return ret;
@@ -364,6 +376,7 @@ static int pwm_imx_tpm_probe(struct platform_device *pdev)
 			"failed to prepare or enable clock: %d\n", ret);
 		return ret;
 	}
+	tpm->clk_is_prepared = 1;
 
 	tpm->chip.dev = &pdev->dev;
 	tpm->chip.ops = &imx_tpm_pwm_ops;
@@ -401,6 +414,7 @@ static void pwm_imx_tpm_remove(struct platform_device *pdev)
 static int __maybe_unused pwm_imx_tpm_suspend(struct device *dev)
 {
 	struct imx_tpm_pwm_chip *tpm = dev_get_drvdata(dev);
+	int ret;
 
 	if (tpm->enable_count > 0)
 		return -EBUSY;
@@ -413,8 +427,15 @@ static int __maybe_unused pwm_imx_tpm_suspend(struct device *dev)
 	tpm->real_period = 0;
 
 	clk_disable_unprepare(tpm->clk);
+	tpm->clk_is_prepared = 0;
 
-	return 0;
+	ret = pinctrl_pm_select_sleep_state(dev);
+	if (ret) {
+		clk_prepare_enable(tpm->clk);
+		tpm->clk_is_prepared = 1;
+	}
+
+	return ret;
 }
 
 static int __maybe_unused pwm_imx_tpm_resume(struct device *dev)
@@ -422,9 +443,20 @@ static int __maybe_unused pwm_imx_tpm_resume(struct device *dev)
 	struct imx_tpm_pwm_chip *tpm = dev_get_drvdata(dev);
 	int ret = 0;
 
-	ret = clk_prepare_enable(tpm->clk);
+	ret = pinctrl_pm_select_default_state(dev);
 	if (ret)
-		dev_err(dev, "failed to prepare or enable clock: %d\n", ret);
+		return ret;
+
+	if (!tpm->clk_is_prepared) {
+		printk("%s: preparing clock\n", __func__);
+		ret = clk_prepare_enable(tpm->clk);
+		if (!ret) {
+			tpm->clk_is_prepared = 1;
+		} else {
+			dev_err(dev, "failed to prepare or enable clock: %d\n", ret);
+			pinctrl_pm_select_sleep_state(dev);
+		}
+	}
 
 	return ret;
 }
