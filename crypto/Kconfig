@@ -898,6 +898,26 @@ config CRYPTO_ESSIV
 	  combined with ESSIV the only feasible mode for h/w accelerated
 	  block encryption)
 
+config CRYPTO_TLS
+	tristate "TLS support"
+	select CRYPTO_AEAD
+	select CRYPTO_BLKCIPHER
+	select CRYPTO_MANAGER
+	select CRYPTO_HASH
+	select CRYPTO_NULL
+	select CRYPTO_AUTHENC
+	help
+	  Support for TLS 1.0 record encryption and decryption
+
+	  This module adds support for encryption/decryption of TLS 1.0 frames
+	  using blockcipher algorithms. The name of the resulting algorithm is
+	  "tls10(hmac(<digest>),cbc(<cipher>))". By default, the generic base
+	  algorithms are used (e.g. aes-generic, sha1-generic), but hardware
+	  accelerated versions will be used automatically if available.
+
+	  User-space applications (OpenSSL, GnuTLS) can offload TLS 1.0
+	  operations through AF_ALG or cryptodev interfaces
+
 endmenu
 
 menu "Hashes, digests, and MACs"
@@ -1291,10 +1311,11 @@ config CRYPTO_JITTERENTROPY
 
 	  A non-physical non-deterministic ("true") RNG (e.g., an entropy source
 	  compliant with NIST SP800-90B) intended to provide a seed to a
-	  deterministic RNG (e.g.  per NIST SP800-90C).
+	  deterministic RNG (e.g., per NIST SP800-90C).
 	  This RNG does not perform any cryptographic whitening of the generated
+	  random numbers.
 
-	  See https://www.chronox.de/jent.html
+	  See https://www.chronox.de/jent/
 
 config CRYPTO_JITTERENTROPY_TESTINTERFACE
 	bool "CPU Jitter RNG Test Interface"

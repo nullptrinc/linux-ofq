@@ -276,21 +276,36 @@ void vhost_vq_flush(struct vhost_virtqueue *vq)
 EXPORT_SYMBOL_GPL(vhost_vq_flush);
 
 /**
- * vhost_worker_flush - flush a worker
+ * __vhost_worker_flush - flush a worker
  * @worker: worker to flush
  *
- * This does not use RCU to protect the worker, so the device or worker
- * mutex must be held.
+ * The worker's flush_mutex must be held.
  */
-static void vhost_worker_flush(struct vhost_worker *worker)
+static void __vhost_worker_flush(struct vhost_worker *worker)
 {
 	struct vhost_flush_struct flush;
+
+	if (!worker->attachment_cnt || worker->killed)
+		return;
 
 	init_completion(&flush.wait_event);
 	vhost_work_init(&flush.work, vhost_flush_work);
 
 	vhost_worker_queue(worker, &flush.work);
+	/*
+	 * Drop mutex in case our worker is killed and it needs to take the
+	 * mutex to force cleanup.
+	 */
+	mutex_unlock(&worker->mutex);
 	wait_for_completion(&flush.wait_event);
+	mutex_lock(&worker->mutex);
+}
+
+static void vhost_worker_flush(struct vhost_worker *worker)
+{
+	mutex_lock(&worker->mutex);
+	__vhost_worker_flush(worker);
+	mutex_unlock(&worker->mutex);
 }
 
 void vhost_dev_flush(struct vhost_dev *dev)
@@ -298,15 +313,8 @@ void vhost_dev_flush(struct vhost_dev *dev)
 	struct vhost_worker *worker;
 	unsigned long i;
 
-	xa_for_each(&dev->worker_xa, i, worker) {
-		mutex_lock(&worker->mutex);
-		if (!worker->attachment_cnt) {
-			mutex_unlock(&worker->mutex);
-			continue;
-		}
+	xa_for_each(&dev->worker_xa, i, worker)
 		vhost_worker_flush(worker);
-		mutex_unlock(&worker->mutex);
-	}
 }
 EXPORT_SYMBOL_GPL(vhost_dev_flush);
 
@@ -392,7 +400,7 @@ static void vhost_vq_reset(struct vhost_dev *dev,
 	__vhost_vq_meta_reset(vq);
 }
 
-static bool vhost_worker(void *data)
+static bool vhost_run_work_list(void *data)
 {
 	struct vhost_worker *worker = data;
 	struct vhost_work *work, *work_next;
@@ -415,6 +423,40 @@ static bool vhost_worker(void *data)
 	}
 
 	return !!node;
+}
+
+static void vhost_worker_killed(void *data)
+{
+	struct vhost_worker *worker = data;
+	struct vhost_dev *dev = worker->dev;
+	struct vhost_virtqueue *vq;
+	int i, attach_cnt = 0;
+
+	mutex_lock(&worker->mutex);
+	worker->killed = true;
+
+	for (i = 0; i < dev->nvqs; i++) {
+		vq = dev->vqs[i];
+
+		mutex_lock(&vq->mutex);
+		if (worker ==
+		    rcu_dereference_check(vq->worker,
+					  lockdep_is_held(&vq->mutex))) {
+			rcu_assign_pointer(vq->worker, NULL);
+			attach_cnt++;
+		}
+		mutex_unlock(&vq->mutex);
+	}
+
+	worker->attachment_cnt -= attach_cnt;
+	if (attach_cnt)
+		synchronize_rcu();
+	/*
+	 * Finish vhost_worker_flush calls and any other works that snuck in
+	 * before the synchronize_rcu.
+	 */
+	vhost_run_work_list(worker);
+	mutex_unlock(&worker->mutex);
 }
 
 static void vhost_vq_free_iovecs(struct vhost_virtqueue *vq)
@@ -535,6 +577,9 @@ void vhost_dev_init(struct vhost_dev *dev,
 		vq->heads = NULL;
 		vq->dev = dev;
 		mutex_init(&vq->mutex);
+#ifdef CONFIG_VHOST_XEN
+		INIT_LIST_HEAD(&vq->desc_maps);
+#endif
 		vhost_vq_reset(dev, vq);
 		if (vq->handle_kick)
 			vhost_poll_init(&vq->poll, vq->handle_kick,
@@ -631,9 +676,11 @@ static struct vhost_worker *vhost_worker_create(struct vhost_dev *dev)
 	if (!worker)
 		return NULL;
 
+	worker->dev = dev;
 	snprintf(name, sizeof(name), "vhost-%d", current->pid);
 
-	vtsk = vhost_task_create(vhost_worker, worker, name);
+	vtsk = vhost_task_create(vhost_run_work_list, vhost_worker_killed,
+				 worker, name);
 	if (!vtsk)
 		goto free_worker;
 
@@ -664,22 +711,37 @@ static void __vhost_vq_attach_worker(struct vhost_virtqueue *vq,
 {
 	struct vhost_worker *old_worker;
 
-	old_worker = rcu_dereference_check(vq->worker,
-					   lockdep_is_held(&vq->dev->mutex));
-
 	mutex_lock(&worker->mutex);
-	worker->attachment_cnt++;
-	mutex_unlock(&worker->mutex);
-	rcu_assign_pointer(vq->worker, worker);
-
-	if (!old_worker)
+	if (worker->killed) {
+		mutex_unlock(&worker->mutex);
 		return;
+	}
+
+	mutex_lock(&vq->mutex);
+
+	old_worker = rcu_dereference_check(vq->worker,
+					   lockdep_is_held(&vq->mutex));
+	rcu_assign_pointer(vq->worker, worker);
+	worker->attachment_cnt++;
+
+	if (!old_worker) {
+		mutex_unlock(&vq->mutex);
+		mutex_unlock(&worker->mutex);
+		return;
+	}
+	mutex_unlock(&vq->mutex);
+	mutex_unlock(&worker->mutex);
+
 	/*
 	 * Take the worker mutex to make sure we see the work queued from
 	 * device wide flushes which doesn't use RCU for execution.
 	 */
 	mutex_lock(&old_worker->mutex);
-	old_worker->attachment_cnt--;
+	if (old_worker->killed) {
+		mutex_unlock(&old_worker->mutex);
+		return;
+	}
+
 	/*
 	 * We don't want to call synchronize_rcu for every vq during setup
 	 * because it will slow down VM startup. If we haven't done
@@ -690,6 +752,8 @@ static void __vhost_vq_attach_worker(struct vhost_virtqueue *vq,
 	mutex_lock(&vq->mutex);
 	if (!vhost_vq_get_backend(vq) && !vq->kick) {
 		mutex_unlock(&vq->mutex);
+
+		old_worker->attachment_cnt--;
 		mutex_unlock(&old_worker->mutex);
 		/*
 		 * vsock can queue anytime after VHOST_VSOCK_SET_GUEST_CID.
@@ -705,7 +769,8 @@ static void __vhost_vq_attach_worker(struct vhost_virtqueue *vq,
 	/* Make sure new vq queue/flush/poll calls see the new worker */
 	synchronize_rcu();
 	/* Make sure whatever was queued gets run */
-	vhost_worker_flush(old_worker);
+	__vhost_worker_flush(old_worker);
+	old_worker->attachment_cnt--;
 	mutex_unlock(&old_worker->mutex);
 }
 
@@ -754,10 +819,16 @@ static int vhost_free_worker(struct vhost_dev *dev,
 		return -ENODEV;
 
 	mutex_lock(&worker->mutex);
-	if (worker->attachment_cnt) {
+	if (worker->attachment_cnt || worker->killed) {
 		mutex_unlock(&worker->mutex);
 		return -EBUSY;
 	}
+	/*
+	 * A flush might have raced and snuck in before attachment_cnt was set
+	 * to zero. Make sure flushes are flushed from the queue before
+	 * freeing.
+	 */
+	__vhost_worker_flush(worker);
 	mutex_unlock(&worker->mutex);
 
 	vhost_worker_destroy(dev, worker);
@@ -980,6 +1051,9 @@ void vhost_dev_cleanup(struct vhost_dev *dev)
 		if (dev->vqs[i]->call_ctx.ctx)
 			eventfd_ctx_put(dev->vqs[i]->call_ctx.ctx);
 		vhost_vq_reset(dev, dev->vqs[i]);
+#ifdef CONFIG_VHOST_XEN
+		vhost_xen_unmap_desc_all(dev->vqs[i]);
+#endif
 	}
 	vhost_dev_free_iovecs(dev);
 	if (dev->log_ctx)
@@ -1744,6 +1818,14 @@ static long vhost_set_memory(struct vhost_dev *d, struct vhost_memory __user *m)
 	for (region = newmem->regions;
 	     region < newmem->regions + mem.nregions;
 	     region++) {
+
+#ifdef CONFIG_VHOST_XEN
+		if (region->guest_phys_addr & XEN_GRANT_DMA_ADDR_OFF) {
+			pr_err("%s: Skip pseudo memory region for Xen grant mappings\n", __func__);
+			continue;
+		}
+#endif
+
 		if (vhost_iotlb_add_range(newumem,
 					  region->guest_phys_addr,
 					  region->guest_phys_addr +
@@ -2339,6 +2421,15 @@ static int translate_desc(struct vhost_virtqueue *vq, u64 addr, u32 len,
 	u64 s = 0, last = addr + len - 1;
 	int ret = 0;
 
+#ifdef CONFIG_VHOST_XEN
+	iov->iov_len = len;
+	iov->iov_base = vhost_xen_map_desc(vq, addr, len, access);
+	if (IS_ERR(iov->iov_base))
+		return PTR_ERR(iov->iov_base);
+	else
+		return 1;
+#endif
+
 	while ((u64)len > s) {
 		u64 size;
 		if (unlikely(ret >= iov_size)) {
@@ -2418,7 +2509,12 @@ static int get_indirect(struct vhost_virtqueue *vq,
 			vq_err(vq, "Translation failure %d in indirect.\n", ret);
 		return ret;
 	}
+
+#ifdef CONFIG_VHOST_XEN
+	iov_iter_kvec(&from, ITER_SOURCE, (struct kvec *)vq->indirect, ret, len);
+#else
 	iov_iter_init(&from, ITER_SOURCE, vq->indirect, ret, len);
+#endif
 	count = len / sizeof desc;
 	/* Buffers are chained via a 16 bit next field, so
 	 * we can have at most 2^16 of these. */
@@ -2480,6 +2576,12 @@ static int get_indirect(struct vhost_virtqueue *vq,
 			*out_num += ret;
 		}
 	} while ((i = next_desc(vq, &desc)) != -1);
+
+#ifdef CONFIG_VHOST_XEN
+	if (vq->indirect)
+		vhost_xen_unmap_desc(vq, vq->indirect->iov_base, vq->indirect->iov_len);
+#endif
+
 	return 0;
 }
 
@@ -2799,9 +2901,19 @@ bool vhost_vq_avail_empty(struct vhost_dev *dev, struct vhost_virtqueue *vq)
 	r = vhost_get_avail_idx(vq, &avail_idx);
 	if (unlikely(r))
 		return false;
-	vq->avail_idx = vhost16_to_cpu(vq, avail_idx);
 
-	return vq->avail_idx == vq->last_avail_idx;
+	vq->avail_idx = vhost16_to_cpu(vq, avail_idx);
+	if (vq->avail_idx != vq->last_avail_idx) {
+		/* Since we have updated avail_idx, the following
+		 * call to vhost_get_vq_desc() will read available
+		 * ring entries. Make sure that read happens after
+		 * the avail_idx read.
+		 */
+		smp_rmb();
+		return false;
+	}
+
+	return true;
 }
 EXPORT_SYMBOL_GPL(vhost_vq_avail_empty);
 
@@ -2838,9 +2950,19 @@ bool vhost_enable_notify(struct vhost_dev *dev, struct vhost_virtqueue *vq)
 		       &vq->avail->idx, r);
 		return false;
 	}
-	vq->avail_idx = vhost16_to_cpu(vq, avail_idx);
 
-	return vq->avail_idx != vq->last_avail_idx;
+	vq->avail_idx = vhost16_to_cpu(vq, avail_idx);
+	if (vq->avail_idx != vq->last_avail_idx) {
+		/* Since we have updated avail_idx, the following
+		 * call to vhost_get_vq_desc() will read available
+		 * ring entries. Make sure that read happens after
+		 * the avail_idx read.
+		 */
+		smp_rmb();
+		return true;
+	}
+
+	return false;
 }
 EXPORT_SYMBOL_GPL(vhost_enable_notify);
 

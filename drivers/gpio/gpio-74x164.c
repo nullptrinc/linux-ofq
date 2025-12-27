@@ -127,8 +127,6 @@ static int gen_74x164_probe(struct spi_device *spi)
 	if (IS_ERR(chip->gpiod_oe))
 		return PTR_ERR(chip->gpiod_oe);
 
-	gpiod_set_value_cansleep(chip->gpiod_oe, 1);
-
 	spi_set_drvdata(spi, chip);
 
 	chip->gpio_chip.label = spi->modalias;
@@ -141,6 +139,9 @@ static int gen_74x164_probe(struct spi_device *spi)
 	chip->registers = nregs;
 	chip->gpio_chip.ngpio = GEN_74X164_NUMBER_GPIOS * chip->registers;
 
+	of_property_read_u8_array(spi->dev.of_node, "registers-default",
+				 chip->buffer, chip->registers);
+
 	chip->gpio_chip.can_sleep = true;
 	chip->gpio_chip.parent = &spi->dev;
 	chip->gpio_chip.owner = THIS_MODULE;
@@ -152,6 +153,8 @@ static int gen_74x164_probe(struct spi_device *spi)
 		dev_err(&spi->dev, "Failed writing: %d\n", ret);
 		goto exit_destroy;
 	}
+
+	gpiod_set_value_cansleep(chip->gpiod_oe, 1);
 
 	ret = gpiochip_add_data(&chip->gpio_chip, chip);
 	if (!ret)

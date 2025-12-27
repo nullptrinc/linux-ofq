@@ -40,6 +40,10 @@
  */
 #define dgh()		asm volatile("hint #6" : : : "memory")
 
+#define spec_bar()	asm volatile(ALTERNATIVE("dsb nsh\nisb\n",		\
+						 SB_BARRIER_INSN"nop\n",	\
+						 ARM64_HAS_SB))
+
 #ifdef CONFIG_ARM64_PSEUDO_NMI
 #define pmr_sync()						\
 	do {							\
@@ -57,9 +61,9 @@
 #define __rmb()		dsb(ld)
 #define __wmb()		dsb(st)
 
-#define __dma_mb()	dmb(osh)
-#define __dma_rmb()	dmb(oshld)
-#define __dma_wmb()	dmb(oshst)
+#define __dma_mb()	dmb(sy)
+#define __dma_rmb()	dmb(ld)
+#define __dma_wmb()	dmb(st)
 
 #define io_stop_wc()	dgh()
 

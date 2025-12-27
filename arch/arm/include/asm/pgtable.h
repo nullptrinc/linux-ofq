@@ -115,6 +115,13 @@ extern pgprot_t		pgprot_kernel;
 #define pgprot_noncached(prot) \
 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_UNCACHED)
 
+#define pgprot_cached(prot) \
+	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_DEV_CACHED)
+
+#define pgprot_cached_ns(prot) \
+	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_DEV_CACHED | \
+			L_PTE_MT_DEV_NONSHARED)
+
 #define pgprot_writecombine(prot) \
 	__pgprot_modify(prot, L_PTE_MT_MASK, L_PTE_MT_BUFFERABLE)
 
@@ -150,6 +157,8 @@ extern pgprot_t phys_mem_access_prot(struct file *file, unsigned long pfn,
 #ifndef __ASSEMBLY__
 
 extern pgd_t swapper_pg_dir[PTRS_PER_PGD];
+
+#define pgdp_get(pgpd)		READ_ONCE(*pgdp)
 
 #define pud_page(pud)		pmd_page(__pmd(pud_val(pud)))
 #define pud_write(pud)		pmd_write(__pmd(pud_val(pud)))

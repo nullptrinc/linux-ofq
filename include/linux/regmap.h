@@ -300,6 +300,7 @@ typedef void (*regmap_unlock)(void *);
  * @disable_locking: This regmap is either protected by external means or
  *                   is guaranteed not to be accessed from multiple threads.
  *                   Don't use any locking mechanisms.
+ * @disable_debugfs: Optional, don't create debugfs entries for this regmap.
  * @lock:	  Optional lock callback (overrides regmap's default lock
  *		  function, based on spinlock or mutex).
  * @unlock:	  As above for unlocking.
@@ -403,6 +404,7 @@ struct regmap_config {
 	bool (*readable_noinc_reg)(struct device *dev, unsigned int reg);
 
 	bool disable_locking;
+	bool disable_debugfs;
 	regmap_lock lock;
 	regmap_unlock unlock;
 	void *lock_arg;
@@ -1225,6 +1227,7 @@ int regmap_multi_reg_write_bypassed(struct regmap *map,
 int regmap_raw_write_async(struct regmap *map, unsigned int reg,
 			   const void *val, size_t val_len);
 int regmap_read(struct regmap *map, unsigned int reg, unsigned int *val);
+int regmap_read_bypassed(struct regmap *map, unsigned int reg, unsigned int *val);
 int regmap_raw_read(struct regmap *map, unsigned int reg,
 		    void *val, size_t val_len);
 int regmap_noinc_read(struct regmap *map, unsigned int reg,
@@ -1729,6 +1732,13 @@ static inline int regmap_bulk_write(struct regmap *map, unsigned int reg,
 
 static inline int regmap_read(struct regmap *map, unsigned int reg,
 			      unsigned int *val)
+{
+	WARN_ONCE(1, "regmap API is disabled");
+	return -EINVAL;
+}
+
+static inline int regmap_read_bypassed(struct regmap *map, unsigned int reg,
+				       unsigned int *val)
 {
 	WARN_ONCE(1, "regmap API is disabled");
 	return -EINVAL;

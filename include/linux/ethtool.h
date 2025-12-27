@@ -989,6 +989,12 @@ ethtool_params_from_link_mode(struct ethtool_link_ksettings *link_ksettings,
 			      enum ethtool_link_mode_bit_indices link_mode);
 
 /**
+ * ethtool_link_mode_str - Get name of a given link mode, in string format
+ * @link_mode: the link mode represented in integer format
+ */
+const char *ethtool_link_mode_str(enum ethtool_link_mode_bit_indices link_mode);
+
+/**
  * ethtool_get_phc_vclocks - Derive phc vclocks information, and caller
  *                           is responsible to free memory of vclock_index
  * @dev: pointer to net_device structure
@@ -1045,10 +1051,10 @@ static inline int ethtool_mm_frag_size_min_to_add(u32 val_min, u32 *val_add,
 
 /**
  * ethtool_sprintf - Write formatted string to ethtool string data
- * @data: Pointer to start of string to update
+ * @data: Pointer to a pointer to the start of string to update
  * @fmt: Format of string to write
  *
- * Write formatted string to data. Update data to point at start of
+ * Write formatted string to *data. Update *data to point at start of
  * next string.
  */
 extern __printf(2, 3) void ethtool_sprintf(u8 **data, const char *fmt, ...);

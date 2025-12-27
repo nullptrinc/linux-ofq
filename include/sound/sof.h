@@ -52,10 +52,13 @@ enum sof_dsp_power_states {
 
 /* Definitions for multiple IPCs */
 enum sof_ipc_type {
-	SOF_IPC,
-	SOF_INTEL_IPC4,
+	SOF_IPC_TYPE_3,
+	SOF_IPC_TYPE_4,
 	SOF_IPC_TYPE_COUNT
 };
+
+#define SOF_IPC		SOF_IPC_TYPE_3
+#define SOF_INTEL_IPC4	SOF_IPC_TYPE_4
 
 /*
  * SOF Platform data.
@@ -63,6 +66,14 @@ enum sof_ipc_type {
 struct snd_sof_pdata {
 	const char *name;
 	const char *platform;
+
+	/*
+	 * PCI SSID. As PCI does not define 0 as invalid, the subsystem_id_set
+	 * flag indicates that a value has been written to these members.
+	 */
+	unsigned short subsystem_vendor;
+	unsigned short subsystem_device;
+	bool subsystem_id_set;
 
 	struct device *dev;
 
@@ -91,6 +102,7 @@ struct snd_sof_pdata {
 	struct platform_device *pdev_mach;
 	const struct snd_soc_acpi_mach *machine;
 	const struct snd_sof_of_mach *of_machine;
+	const char *machine_drv_name; /* machine driver name, set only for OF case */
 
 	void *hw_pdata;
 

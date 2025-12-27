@@ -459,6 +459,8 @@ void __init smp_prepare_boot_cpu(void)
 		init_gic_priority_masking();
 
 	kasan_init_hw_tags();
+	/* Init percpu seeds for random tags after cpus are set up. */
+	kasan_init_sw_tags();
 }
 
 /*
@@ -920,10 +922,19 @@ static irqreturn_t ipi_handler(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_IMX_GPCV2
+extern void imx_gpcv2_raise_softirq(const struct cpumask *mask,
+		                                         unsigned int irq);
+#endif
+
 static void smp_cross_call(const struct cpumask *target, unsigned int ipinr)
 {
 	trace_ipi_raise(target, ipi_types[ipinr]);
 	__ipi_send_mask(ipi_desc[ipinr], target);
+
+#ifdef CONFIG_IMX_GPCV2
+	imx_gpcv2_raise_softirq(target, ipinr);
+#endif
 }
 
 static void ipi_setup(int cpu)

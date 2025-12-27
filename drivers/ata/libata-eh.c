@@ -562,6 +562,10 @@ void ata_scsi_error(struct Scsi_Host *host)
 	/* finish or retry handled scmd's and clean up */
 	WARN_ON(!list_empty(&eh_work_q));
 
+#ifdef CONFIG_AHCI_IMX_PMP
+	ap->flags &= ~(0x7 << 29);
+#endif
+
 }
 
 /**
@@ -700,8 +704,10 @@ void ata_scsi_port_error_handler(struct Scsi_Host *host, struct ata_port *ap)
 				ehc->saved_ncq_enabled |= 1 << devno;
 
 			/* If we are resuming, wake up the device */
-			if (ap->pflags & ATA_PFLAG_RESUMING)
+			if (ap->pflags & ATA_PFLAG_RESUMING) {
+				dev->flags |= ATA_DFLAG_RESUMING;
 				ehc->i.dev_action[devno] |= ATA_EH_SET_ACTIVE;
+			}
 		}
 	}
 
@@ -2034,6 +2040,10 @@ static void ata_eh_link_autopsy(struct ata_link *link)
 	if (ehc->i.flags & ATA_EHI_NO_AUTOPSY)
 		return;
 
+#ifdef CONFIG_AHCI_IMX_PMP
+	ata_msleep(ap, 20);
+#endif
+
 	/* obtain and analyze SError */
 	rc = sata_scr_read(link, SCR_ERROR, &serror);
 	if (rc == 0) {
@@ -3170,6 +3180,7 @@ static int ata_eh_revalidate_and_attach(struct ata_link *link,
 	return 0;
 
  err:
+	dev->flags &= ~ATA_DFLAG_RESUMING;
 	*r_failed_dev = dev;
 	return rc;
 }
@@ -3684,6 +3695,11 @@ int ata_eh_recover(struct ata_port *ap, ata_prereset_fn_t prereset,
 	struct ata_device *dev;
 	int rc, nr_fails;
 	unsigned long flags, deadline;
+
+#ifdef CONFIG_AHCI_IMX_PMP
+	if (ap->flags & (1 << 31))
+		ap->flags |= (1 << 29);
+#endif
 
 	/* prep for recovery */
 	ata_for_each_link(link, ap, EDGE) {
