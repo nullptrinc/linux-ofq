@@ -83,7 +83,7 @@
 			  imx8mm-evk-lk.dtb imx8mm-evk-rpmsg-wm8524-lpv.dtb
 #dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-rpmsg-wm8524.dtb
 
-dtb-$(CONFIG_ARCH_MXC) += visionsom-8mm-cb-std.dtb \
+#dtb-$(CONFIG_ARCH_MXC) += visionsom-8mm-cb-std.dtb \
 			  visionsom-8mm-cb-std-mipi7-ph720128t003.dtb \
 			  visionsom-8mm-cb-std-mipi7-rvt70hsmnwc00.dtb \
 			  visionsom-8mm-cb-std-mipi10.dtb \
@@ -97,6 +97,11 @@ dtb-$(CONFIG_ARCH_MXC) += visionsom-8mm-cb-std.dtb \
 			  visionsom-8mm-cb-adv-hdmi.dtb \
 			  visionsom-8mm-cb-adv-dp.dtb \
 			  visionsom-8mm-cb-adv-lvds-rvt70hslnwc00-b.dtb \
+			  titansbc-8mmini.dtb
+
+dtb-$(CONFIG_ARCH_MXC) += 
+			  visionsom-8mm-cb-adv.dtb \
+			  visionsom-8mm-cb-adv-hdmi.dtb \
 			  titansbc-8mmini.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += spacesom-8mplus-cb-adv.dtb
