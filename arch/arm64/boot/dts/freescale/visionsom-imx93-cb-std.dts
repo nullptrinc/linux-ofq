@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright 2025 SomLabs
+ *
+ */
+
+#include "visionsom-imx93-cb-std.dtsi"
+
+/ {
+    model = "SoMLabs VisionSOM-IMX93 CB-STD";
+};

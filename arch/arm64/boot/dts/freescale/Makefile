@@ -82,6 +82,25 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk.dtb imx8mm-evk-rpmsg.dtb imx8mm-evk-rm67191
 			  imx8mm-evk-rm67199.dtb imx8mm-evk-rm67191-cmd-ram.dtb imx8mm-evk-rm67199-cmd-ram.dtb \
 			  imx8mm-evk-lk.dtb imx8mm-evk-rpmsg-wm8524-lpv.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-rpmsg-wm8524.dtb
+
+dtb-$(CONFIG_ARCH_MXC) += visionsom-8mm-cb-std.dtb \
+			  visionsom-8mm-cb-std-mipi7-ph720128t003.dtb \
+			  visionsom-8mm-cb-std-mipi7-rvt70hsmnwc00.dtb \
+			  visionsom-8mm-cb-std-mipi10.dtb \
+			  visionsom-8mm-cb-std-hdmi.dtb \
+			  visionsom-8mm-cb-std-dp.dtb \
+			  visionsom-8mm-cb-std-lvds-rvt70hslnwc00-b.dtb \
+			  visionsom-8mm-cb-adv.dtb \
+			  visionsom-8mm-cb-adv-mipi7-ph720128t003.dtb \
+			  visionsom-8mm-cb-adv-mipi7-rvt70hsmnwc00.dtb \
+			  visionsom-8mm-cb-adv-mipi10.dtb \
+			  visionsom-8mm-cb-adv-hdmi.dtb \
+			  visionsom-8mm-cb-adv-dp.dtb \
+			  visionsom-8mm-cb-adv-lvds-rvt70hslnwc00-b.dtb \
+			  titansbc-8mmini.dtb
+
+dtb-$(CONFIG_ARCH_MXC) += spacesom-8mplus-cb-adv.dtb
+
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-ak4497.dtb imx8mm-evk-ak5558.dtb imx8mm-evk-audio-tdm.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mm-evk-8mic-revE.dtb imx8mm-evk-8mic-swpdm.dtb \
 			  imx8mm-evk-iqaudio-dacplus.dtb imx8mm-evk-iqaudio-dacpro.dtb imx8mm-evk-hifiberry-dacplus.dtb \
@@ -163,7 +182,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mn-ddr3l-evk-ak5558.dtb imx8mn-ddr4-evk-ak5558.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mn-ab2.dtb imx8mn-ddr3l-ab2.dtb imx8mn-ddr4-ab2.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mn-evk-iqaudio-dacplus.dtb imx8mn-evk-iqaudio-dacpro.dtb imx8mn-evk-hifiberry-dacplus.dtb \
 			  imx8mn-evk-hifiberry-dac2.dtb
-
+			  
 dtb-$(CONFIG_ARCH_MXC) += imx8mn-var-som-symphony.dtb imx8mn-var-som-symphony-m7.dtb \
 			  imx8mn-var-som-symphony-root.dtb imx8mn-var-som-inmate.dtb
 
@@ -201,7 +220,7 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mn-var-som-symphony-1.x.dtb \
 			  imx8mn-var-som-wbe-symphony-1.x-m7.dtb \
 			  imx8mn-var-som-wbe-symphony-1.x-root.dtb
 
-dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk.dtb imx8mp-evk-rm67191.dtb imx8mp-evk-it6263-lvds-dual-channel.dtb \
+			  dtb-$(CONFIG_ARCH_MXC) += imx8mp-evk.dtb imx8mp-evk-rm67191.dtb imx8mp-evk-it6263-lvds-dual-channel.dtb \
 			  imx8mp-evk-pcie-ep.dtb  imx8mp-evk-rpmsg.dtb imx8mp-evk-ecspi-slave.dtb \
 			  imx8mp-evk-jdi-wuxga-lvds-panel.dtb imx8mp-evk-flexcan2.dtb \
 			  imx8mp-evk-root.dtb imx8mp-evk-inmate.dtb imx8mp-evk-ov2775.dtb \
@@ -479,6 +498,12 @@ dtb-$(CONFIG_ARCH_MXC) += imx8mq-ddr3l-val.dtb imx8mq-ddr4-val.dtb imx8mq-ddr4-v
 dtb-$(CONFIG_ARCH_MXC) += imx8mq-evk-pcie-ep.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx8mq-wevk.dtb
 
+#dtb-$(CONFIG_ARCH_MXC) += imx8qm-apalis-eval.dtb
+#dtb-$(CONFIG_ARCH_MXC) += imx8qm-apalis-ixora-v1.1.dtb
+#dtb-$(CONFIG_ARCH_MXC) += imx8qm-apalis-v1.1-eval.dtb
+#dtb-$(CONFIG_ARCH_MXC) += imx8qm-apalis-v1.1-ixora-v1.1.dtb
+#dtb-$(CONFIG_ARCH_MXC) += imx8qm-apalis-v1.1-ixora-v1.2.dtb
+
 imx8mq-var-dart-dt8mcustomboard-m4-sd-hdmi-dtbs := \
 	imx8mq-var-dart-dt8mcustomboard.dtb \
 	imx8mq-var-dart-sd.dtbo \
@@ -755,6 +780,9 @@ dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-pmic-pf0900-mt9m114.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-pmic-pf0900-ld.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-pmic-pf0900-rpmsg.dtb
 dtb-$(CONFIG_ARCH_MXC) += imx93-11x11-evk-pmic-pf0900-rpmsg-lpv.dtb
+dtb-$(CONFIG_ARCH_MXC) += visionsom-imx93-cb-std.dtb
+dtb-$(CONFIG_ARCH_MXC) += visionsom-imx93-cb-std-lvds-rvt70hslnwc00-b.dtb
+dtb-$(CONFIG_ARCH_MXC) += visionsom-imx93-cb-std-mipi-rvt70hsmnwc00.dtb
 
 dtb-$(CONFIG_ARCH_MXC) += imx93-9x9-qsb.dtb \
 			  imx93-9x9-qsb-can1.dtb \

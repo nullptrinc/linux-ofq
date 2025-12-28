@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Copyright 2020 SomLabs
+ *
+ */
+
+#include "visionsom-8mm-cb-lt8912.dtsi"
+
+/ {
+
+    panel_lvds {
+        compatible = "riverdi,rvt70hslnwc00-b";
+        port {
+            lvds_panel_in: endpoint {
+                remote-endpoint = <&lt8912_lvds_out>;
+            };
+        };
+    };
+};
+
+&i2c2 {
+    /* MIPI-DSI to HDMI adapter */
+    mipi_dsi_hdmi: lt8912@48 {
+        ports {
+            port@2 {
+                reg = <2>;
+                lt8912_lvds_out: endpoint {
+                    remote-endpoint = <&lvds_panel_in>;
+                };
+            };
+        };
+    };
+};
