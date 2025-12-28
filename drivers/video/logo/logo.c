@@ -104,6 +104,10 @@ const struct linux_logo * __ref fb_find_logo(int depth)
 		/* Variscite Linux logo */
 		logo = &logo_variscite_clut224;
 #endif
+#ifdef CONFIG_LOGO_OPENFOQUE_CLUT224
+		/* OpenFoque Platform logo */
+		logo = &logo_openfoque_clut224;
+#endif
 	}
 	return logo;
 }

@@ -72,4 +72,9 @@ config LOGO_VARISCITE_CLUT224
 	bool "224-color Variscite Linux logo"
 	default y
 
+config LOGO_OPENFOQUE_CLUT224
+	bool "224-color OpenFoque Platform logo"
+	depends on ARM || ARM64
+	default y
+
 endif # LOGO
